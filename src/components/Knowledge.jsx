@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
+// 预设API Key（从环境变量读取）
+const PRESET_API_KEY = import.meta.env.VITE_CLAUDE_API_KEY || ''
+
 // 教师数据
 const teachers = {
   weishu: {
@@ -121,7 +124,7 @@ const teachers = {
 }
 
 // API配置 Modal
-function SettingsModal({ isOpen, onClose, apiKey, setApiKey, model, setModel }) {
+function SettingsModal({ isOpen, onClose, apiKey, setApiKey, model, setModel, hasPresetKey }) {
   if (!isOpen) return null
 
   return (
@@ -139,14 +142,26 @@ function SettingsModal({ isOpen, onClose, apiKey, setApiKey, model, setModel }) 
         onClick={e => e.stopPropagation()}
       >
         <h3 className="text-xl font-bold text-gray-900 mb-4">API 设置</h3>
+        {hasPresetKey && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center gap-2 text-green-700">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              <span className="font-medium">已配置后端API Key</span>
+            </div>
+          </div>
+        )}
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Claude API Key</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Claude API Key {hasPresetKey && <span className="text-gray-400 text-xs">(已配置后端Key，此处可留空)</span>}
+            </label>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-..."
+              placeholder={hasPresetKey ? "使用后端API Key" : "sk-..."}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
             />
           </div>
@@ -166,15 +181,9 @@ function SettingsModal({ isOpen, onClose, apiKey, setApiKey, model, setModel }) 
         <div className="flex justify-end gap-3 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-          >
-            取消
-          </button>
-          <button
-            onClick={onClose}
             className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
           >
-            保存
+            确定
           </button>
         </div>
       </motion.div>
@@ -190,15 +199,24 @@ export default function Knowledge() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('claude_api_key') || '')
+  // 优先使用预设API Key，否则使用用户输入的
+  const [apiKey, setApiKey] = useState(() => {
+    const stored = localStorage.getItem('claude_api_key')
+    return stored || PRESET_API_KEY
+  })
   const [model, setModel] = useState(() => localStorage.getItem('claude_model') || 'claude-sonnet-4-20250514')
   const messagesEndRef = useRef(null)
 
   const teacher = teachers[currentTeacher]
+  const hasPresetKey = !!PRESET_API_KEY
+  // 有效的API Key：预设Key优先，否则用用户输入的
+  const effectiveApiKey = PRESET_API_KEY || apiKey
 
   // 保存设置到 localStorage
   useEffect(() => {
-    localStorage.setItem('claude_api_key', apiKey)
+    if (!PRESET_API_KEY) {
+      localStorage.setItem('claude_api_key', apiKey)
+    }
     localStorage.setItem('claude_model', model)
   }, [apiKey, model])
 
@@ -226,7 +244,7 @@ export default function Knowledge() {
     setMessages(prev => [...prev, { role: 'assistant', content: '...', isTyping: true }])
 
     try {
-      if (!apiKey) {
+      if (!effectiveApiKey) {
         throw new Error('请先设置API Key')
       }
 
@@ -256,7 +274,7 @@ export default function Knowledge() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
+        'x-api-key': effectiveApiKey,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
@@ -442,16 +460,16 @@ export default function Knowledge() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                    placeholder={apiKey ? "输入你的问题..." : "请先在设置中配置API Key"}
-                    disabled={!apiKey || isLoading}
+                    placeholder={effectiveApiKey ? "输入你的问题..." : "请先在设置中配置API Key"}
+                    disabled={!effectiveApiKey || isLoading}
                     className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
                   <motion.button
                     onClick={handleSend}
-                    disabled={!apiKey || isLoading || !input.trim()}
+                    disabled={!effectiveApiKey || isLoading || !input.trim()}
                     className="px-6 py-3 bg-gradient-to-r from-amber-600 to-amber-700 text-white rounded-xl hover:from-amber-700 hover:to-amber-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    whileHover={apiKey && input.trim() ? { scale: 1.02 } : {}}
-                    whileTap={apiKey && input.trim() ? { scale: 0.98 } : {}}
+                    whileHover={effectiveApiKey && input.trim() ? { scale: 1.02 } : {}}
+                    whileTap={effectiveApiKey && input.trim() ? { scale: 0.98 } : {}}
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -473,6 +491,7 @@ export default function Knowledge() {
         setApiKey={setApiKey}
         model={model}
         setModel={setModel}
+        hasPresetKey={hasPresetKey}
       />
     </div>
   )
